@@ -456,9 +456,9 @@ require('lazy').setup({
     'neovim/nvim-lspconfig',
     dependencies = {
       -- Automatically install LSPs and related tools to stdpath for Neovim
-      -- Pinned to v1: mason-lspconfig v2 ignores `handlers`, which this config relies on
-      { 'williamboman/mason.nvim', version = '^1.0.0', config = true }, -- NOTE: Must be loaded before dependants
-      { 'williamboman/mason-lspconfig.nvim', version = '^1.0.0' },
+      { 'williamboman/mason.nvim', config = true }, -- NOTE: Must be loaded before dependants
+      -- Only used so mason-tool-installer can map lspconfig server names to Mason packages
+      'williamboman/mason-lspconfig.nvim',
       'WhoIsSethDaniel/mason-tool-installer.nvim',
 
       -- Useful status updates for LSP.
@@ -651,18 +651,14 @@ require('lazy').setup({
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
-      require('mason-lspconfig').setup {
-        handlers = {
-          function(server_name)
-            local server = servers[server_name] or {}
-            -- This handles overriding only values explicitly passed
-            -- by the server configuration above. Useful when disabling
-            -- certain features of an LSP (for example, turning off formatting for ts_ls)
-            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
-            require('lspconfig')[server_name].setup(server)
-          end,
-        },
-      }
+      -- Configure and enable servers with Neovim's native LSP API (nvim 0.11+).
+      -- nvim-lspconfig supplies the default configs (cmd, filetypes, root markers);
+      -- the tables in `servers` above are merged on top of them.
+      vim.lsp.config('*', { capabilities = capabilities })
+      for server_name, server in pairs(servers) do
+        vim.lsp.config(server_name, server)
+        vim.lsp.enable(server_name)
+      end
     end,
   },
 
