@@ -445,20 +445,19 @@ require('lazy').setup({
     ft = 'lua',
     opts = {
       library = {
-        -- Load luvit types when the `vim.uv` word is found
-        { path = 'luvit-meta/library', words = { 'vim%.uv' } },
+        -- Load luv types when the `vim.uv` word is found
+        { path = '${3rd}/luv/library', words = { 'vim%.uv' } },
       },
     },
   },
-  { 'Bilal2453/luvit-meta', lazy = true },
   {
     -- Main LSP Configuration
     'neovim/nvim-lspconfig',
     dependencies = {
       -- Automatically install LSPs and related tools to stdpath for Neovim
-      { 'williamboman/mason.nvim', config = true }, -- NOTE: Must be loaded before dependants
+      { 'mason-org/mason.nvim', config = true }, -- NOTE: Must be loaded before dependants
       -- Only used so mason-tool-installer can map lspconfig server names to Mason packages
-      'williamboman/mason-lspconfig.nvim',
+      'mason-org/mason-lspconfig.nvim',
       'WhoIsSethDaniel/mason-tool-installer.nvim',
 
       -- Useful status updates for LSP.
@@ -650,6 +649,10 @@ require('lazy').setup({
         'stylua', -- Used to format Lua code
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
+
+      -- mason-lspconfig v2 would otherwise enable every installed server on its own;
+      -- we enable servers explicitly below.
+      require('mason-lspconfig').setup { ensure_installed = {}, automatic_enable = false }
 
       -- Configure and enable servers with Neovim's native LSP API (nvim 0.11+).
       -- nvim-lspconfig supplies the default configs (cmd, filetypes, root markers);
@@ -881,22 +884,41 @@ require('lazy').setup({
   },
   { -- Highlight, edit, and navigate code
     'nvim-treesitter/nvim-treesitter',
-    build = ':TSUpdate',
-    main = 'nvim-treesitter.configs', -- Sets main module to use for opts
+    branch = 'main', -- the `master` branch is frozen; `main` is the maintained rewrite
+    lazy = false, -- the `main` branch does not support lazy-loading
+    -- Installing/updating parsers compiles them and needs the `tree-sitter` CLI.
+    build = function()
+      if vim.fn.executable 'tree-sitter' == 1 then
+        vim.cmd 'TSUpdate'
+      end
+    end,
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
-    opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
-      -- Autoinstall languages that are not installed
-      auto_install = true,
-      highlight = {
-        enable = true,
-        -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
-        --  If you are experiencing weird indenting issues, add the language to
-        --  the list of additional_vim_regex_highlighting and disabled languages for indent.
-        additional_vim_regex_highlighting = { 'ruby' },
-      },
-      indent = { enable = true, disable = { 'ruby' } },
-    },
+    config = function()
+      local ts = require 'nvim-treesitter'
+      ts.setup {}
+
+      -- Parsers can only be installed when the `tree-sitter` CLI is available
+      -- (e.g. `brew install tree-sitter-cli`). Without it, only parsers that are
+      -- already installed (and the ones bundled with Neovim) are used.
+      if vim.fn.executable 'tree-sitter' == 1 then
+        ts.install { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+      end
+
+      -- Enable treesitter highlighting and indenting for every filetype that has a parser
+      vim.api.nvim_create_autocmd('FileType', {
+        group = vim.api.nvim_create_augroup('kickstart-treesitter', { clear = true }),
+        callback = function(event)
+          local lang = vim.treesitter.language.get_lang(event.match)
+          if not lang or not pcall(vim.treesitter.start, event.buf, lang) then
+            return
+          end
+          -- Ruby depends on vim's regex-based indent rules
+          if lang ~= 'ruby' then
+            vim.bo[event.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          end
+        end,
+      })
+    end,
     -- There are additional nvim-treesitter modules that you can use to interact
     -- with nvim-treesitter. You should go explore a few and see what interests you:
     --
