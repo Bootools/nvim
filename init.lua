@@ -84,6 +84,20 @@ I hope you enjoy your Neovim journey,
 P.S. You can delete this when you're done too. It's your config now! :)
 --]]
 
+--[[
+Differences from upstream kickstart.nvim in this fork:
+
+  - Colorscheme is rose-pine instead of tokyonight.
+  - clangd is enabled as a language server (next to lua_ls).
+  - LSP servers are set up with Neovim's native `vim.lsp.config()` / `vim.lsp.enable()`
+    instead of the deprecated `require('lspconfig')[name].setup()` and mason-lspconfig handlers.
+  - nvim-treesitter uses the `main` branch, with highlighting/indent enabled by our own
+    FileType autocommand. Installing new parsers needs the `tree-sitter` CLI.
+  - The lazy.nvim lockfile is stored outside of this repo (see the `lockfile` option at the
+    bottom of this file), so plugin updates don't need a commit.
+  - mason-org repos are used for Mason (the old `williamboman/*` names were renamed).
+--]]
+
 -- Set <space> as the leader key
 -- See `:help mapleader`
 --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
@@ -195,7 +209,7 @@ vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 
 -- Highlight when yanking (copying) text
 --  Try it with `yap` in normal mode
---  See `:help vim.highlight.on_yank()`
+--  See `:help vim.hl.on_yank()`
 vim.api.nvim_create_autocmd('TextYankPost', {
   desc = 'Highlight when yanking (copying) text',
   group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
@@ -225,6 +239,11 @@ vim.opt.rtp:prepend(lazypath)
 --
 --  To update plugins you can run
 --    :Lazy update
+--
+--  The exact plugin versions are recorded in a lockfile. It is stored outside of this
+--  repo (see the `lockfile` option at the bottom of this call), so updating plugins
+--  does not create git changes. To roll plugins back to the recorded versions, run
+--    :Lazy restore
 --
 -- NOTE: Here is where you install your plugins.
 require('lazy').setup({
@@ -445,7 +464,8 @@ require('lazy').setup({
     ft = 'lua',
     opts = {
       library = {
-        -- Load luv types when the `vim.uv` word is found
+        -- Load luv (libuv) type annotations when the `vim.uv` word is found.
+        -- `${3rd}` points at the third-party type definitions bundled with lua-language-server.
         { path = '${3rd}/luv/library', words = { 'vim%.uv' } },
       },
     },
@@ -454,9 +474,12 @@ require('lazy').setup({
     -- Main LSP Configuration
     'neovim/nvim-lspconfig',
     dependencies = {
-      -- Automatically install LSPs and related tools to stdpath for Neovim
+      -- Three plugins work together to install LSPs and related tools to stdpath for Neovim:
+      --  - mason.nvim: downloads and manages the external tools
+      --  - mason-lspconfig.nvim: translates LSP server names (e.g. `lua_ls`) to Mason package
+      --      names (e.g. `lua-language-server`). It does not enable servers in this config.
+      --  - mason-tool-installer.nvim: installs everything listed in `ensure_installed` below
       { 'mason-org/mason.nvim', config = true }, -- NOTE: Must be loaded before dependants
-      -- Only used so mason-tool-installer can map lspconfig server names to Mason packages
       'mason-org/mason-lspconfig.nvim',
       'WhoIsSethDaniel/mason-tool-installer.nvim',
 
@@ -596,11 +619,13 @@ require('lazy').setup({
       capabilities = vim.tbl_deep_extend('force', capabilities, require('cmp_nvim_lsp').default_capabilities())
 
       -- Enable the following language servers
-      --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
+      --  Feel free to add/remove any LSPs that you want here. They will automatically be installed
+      --  (by mason-tool-installer) and enabled (by the `vim.lsp.enable` loop further down).
       --
       --  Add any additional override configuration in the following tables. Available keys are:
       --  - cmd (table): Override the default command used to start the server
       --  - filetypes (table): Override the default list of associated filetypes for the server
+      --  - root_markers (table): Override the files/directories that mark a project root
       --  - capabilities (table): Override fields in capabilities. Can be used to disable certain LSP features.
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
@@ -640,6 +665,8 @@ require('lazy').setup({
       --    :Mason
       --
       --  You can press `g?` for help in this menu.
+      --  (mason.nvim is already set up via `config = true` above, so this call is
+      --  redundant but harmless.)
       require('mason').setup()
 
       -- You can add other tools here that you want Mason to install
@@ -650,13 +677,15 @@ require('lazy').setup({
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
-      -- mason-lspconfig v2 would otherwise enable every installed server on its own;
-      -- we enable servers explicitly below.
+      -- mason-lspconfig (v2) would otherwise enable every installed server on its own.
+      -- We turn that off and enable only the servers listed in `servers` below.
       require('mason-lspconfig').setup { ensure_installed = {}, automatic_enable = false }
 
       -- Configure and enable servers with Neovim's native LSP API (nvim 0.11+).
-      -- nvim-lspconfig supplies the default configs (cmd, filetypes, root markers);
-      -- the tables in `servers` above are merged on top of them.
+      --  See `:help lsp-config` and `:help vim.lsp.enable()`
+      --  nvim-lspconfig supplies the default configs (cmd, filetypes, root markers);
+      --  `vim.lsp.config` merges the tables in `servers` above on top of them.
+      --  The '*' config applies to every server, here to share the nvim-cmp capabilities.
       vim.lsp.config('*', { capabilities = capabilities })
       for server_name, server in pairs(servers) do
         vim.lsp.config(server_name, server)
@@ -829,12 +858,12 @@ require('lazy').setup({
     -- change the command in the config to whatever the name of that colorscheme is.
     --
     -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
-    'rose-pine/neovim',
+    'rose-pine/neovim', -- (the repo is called `neovim`, the colorscheme is called `rose-pine`)
     priority = 1000, -- Make sure to load this before all the other start plugins.
     init = function()
       -- Load the colorscheme here.
       -- Like many other themes, this one has different styles, and you could load
-      -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
+      -- any other, such as 'rose-pine-main', 'rose-pine-moon', or 'rose-pine-dawn'.
       vim.cmd.colorscheme 'rose-pine'
 
       -- You can configure highlights by doing something like:
@@ -892,7 +921,9 @@ require('lazy').setup({
         vim.cmd 'TSUpdate'
       end
     end,
-    -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
+    -- [[ Configure Treesitter ]] See `:help nvim-treesitter` and `:help treesitter`
+    --  On the `main` branch, nvim-treesitter only installs parsers and queries. Turning on
+    --  highlighting and indenting is done by us, in the FileType autocommand below.
     config = function()
       local ts = require 'nvim-treesitter'
       ts.setup {}
@@ -904,7 +935,8 @@ require('lazy').setup({
         ts.install { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
       end
 
-      -- Enable treesitter highlighting and indenting for every filetype that has a parser
+      -- Enable treesitter highlighting and indenting for every filetype that has a parser.
+      --  `pcall` makes this silently skip filetypes without an installed parser.
       vim.api.nvim_create_autocmd('FileType', {
         group = vim.api.nvim_create_augroup('kickstart-treesitter', { clear = true }),
         callback = function(event)
@@ -919,10 +951,9 @@ require('lazy').setup({
         end,
       })
     end,
-    -- There are additional nvim-treesitter modules that you can use to interact
-    -- with nvim-treesitter. You should go explore a few and see what interests you:
+    -- There are additional plugins that build on treesitter. You should go explore a few
+    -- and see what interests you:
     --
-    --    - Incremental selection: Included, see `:help nvim-treesitter-incremental-selection-mod`
     --    - Show your current context: https://github.com/nvim-treesitter/nvim-treesitter-context
     --    - Treesitter + textobjects: https://github.com/nvim-treesitter/nvim-treesitter-textobjects
   },
@@ -947,10 +978,16 @@ require('lazy').setup({
   --    This is the easiest way to modularize your config.
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  --    For additional information, see `:help lazy.nvim-lazy.nvim-structuring-your-plugins`
+  --    (Currently disabled: `lua/custom/plugins/init.lua` is just an empty placeholder.)
+  --    For additional information, see https://lazy.folke.io/usage/structuring
   -- { import = 'custom.plugins' },
 }, {
-  -- Keep the lockfile out of the repo so plugin updates don't require commits
+  -- [[ lazy.nvim options ]] This is the second argument of `require('lazy').setup`.
+  --  See https://lazy.folke.io/configuration
+
+  -- Keep the lockfile out of the repo so plugin updates don't require commits.
+  --  It lives in `:echo stdpath('state')`, so each machine tracks its own plugin versions.
+  --  Only adding or removing a plugin in this file needs a commit.
   lockfile = vim.fn.stdpath 'state' .. '/lazy-lock.json',
   ui = {
     -- If you are using a Nerd Font: set icons to an empty table which will use the
